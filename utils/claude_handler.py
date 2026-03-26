@@ -1,3 +1,16 @@
+
+CODIGO_ACCESO = "Nacho882"
+sesiones_autorizadas = set()
+
+def verificar_acceso(remitente: str, mensaje: str) -> tuple[bool, str]:
+    """Verifica si el remitente tiene acceso. Retorna (autorizado, respuesta)."""
+    if remitente in sesiones_autorizadas:
+        return True, ""
+    if mensaje.strip() == CODIGO_ACCESO:
+        sesiones_autorizadas.add(remitente)
+        return True, "✅ Acceso autorizado. Ya podés hacer preguntas sobre las operaciones."
+    return False, "🔒 Bot privado. Ingresá el código de acceso para continuar."
+
 """
 Manejador de Claude API para el bot de operaciones.
 """
@@ -6,6 +19,26 @@ import os
 import anthropic
 
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+# Código de acceso y sesiones autorizadas
+CODIGO_ACCESO = "Nacho882"
+sesiones_autorizadas = set()
+
+def verificar_acceso(remitente: str, mensaje: str) -> tuple[bool, str]:
+    """
+    Verifica si el remitente tiene acceso.
+    Retorna (tiene_acceso, respuesta_si_no_tiene)
+    """
+    if remitente in sesiones_autorizadas:
+        return True, ""
+    
+    if mensaje.strip() == CODIGO_ACCESO:
+        sesiones_autorizadas.add(remitente)
+        return True, "✅ Acceso autorizado. Ya podés hacerme preguntas sobre las operaciones."
+    
+    return False, "🔒 Bot privado. Ingresá el código de acceso para continuar."
+
+
 
 SYSTEM_PROMPT = """Sos el asistente de operaciones de una planta productiva de hamburguesas y otras categorías (medallones, nuggets, salchichas, milanesas, etc.).
 
@@ -42,7 +75,9 @@ Tenés acceso al tablero de operaciones actualizado del día. Respondé siempre 
 
 ## Cómo responder:
 
-- Si preguntan por "hoy" o "último día", usá el último día con datos reales cargados.SIEMPRE aclará la fecha exacta que estás usando, por ejemplo: "El último dato disponible es del 22/03/2026".
+- Si preguntan por "hoy" o "último día", usá el último día con datos reales cargados. SIEMPRE aclará la fecha exacta que estás usando, por ejemplo: "El último dato disponible es del 22/03/2026".
+- Si el contexto incluye un bloque "=== ACUMULADO Marzo 2026 ===", usá ESE bloque para responder preguntas sobre marzo 2026. NO uses el resumen mensual histórico para el mes actual. El acumulado ya está calculado con todos los días disponibles hasta la fecha.
+- Cuando el mes preguntado es el mes actual (marzo 2026), asumí siempre 2026, nunca 2025.
 - Si preguntan por un turno específico (TM o TT), mostrá solo ese.
 - Si preguntan por camiones, detallá por tipo y zona según los datos disponibles.
 - Redondeá los números a enteros o con 1 decimal según corresponda.

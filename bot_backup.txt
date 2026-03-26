@@ -1,3 +1,51 @@
+=== app.py ===
+"""
+Bot de WhatsApp para operaciones de planta.
+Recibe mensajes de Twilio, lee el Excel y consulta a Claude.
+"""
+
+from flask import Flask, request
+from twilio.twiml.messaging_response import MessagingResponse
+from utils.excel_reader import get_contexto_completo
+from utils.claude_handler import preguntar_a_claude
+
+app = Flask(__name__)
+
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    pregunta = request.form.get("Body", "").strip()
+    remitente = request.form.get("From", "")
+
+    from utils.claude_handler import verificar_acceso
+    autorizado, msg_acceso = verificar_acceso(remitente, pregunta)
+
+    if not autorizado:
+        respuesta = msg_acceso
+    elif not pregunta:
+        respuesta = "Hola! Mandame tu pregunta sobre las operaciones de la planta."
+    else:
+        try:
+            contexto = get_contexto_completo(pregunta)
+            respuesta = preguntar_a_claude(pregunta, contexto)
+        except Exception as e:
+            respuesta = f"Hubo un error al procesar tu consulta: {str(e)}"
+
+    resp = MessagingResponse()
+    msg = resp.message()
+    msg.body(respuesta)
+    return str(resp)
+
+
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot de operaciones activo ✅", 200
+
+
+if __name__ == "__main__":
+    app.run(debug=False, port=5000)
+
+=== utils/excel_reader.py ===
 """
 Lector del Tablero_Resumido.xlsx
 Estructura verificada contra el archivo real:
@@ -603,3 +651,186 @@ Detalle Itu        : Semi={acum["semi_itu"] or 0}  Balancín={acum["balancin_itu
             partes.append("=== ÚLTIMOS RECORTES DE PRODUCCIÓN ===\n" + "\n".join(lineas))
 
     return "\n\n".join(partes) if partes else "No hay datos cargados en el Excel todavía."
+
+=== utils/claude_handler.py ===
+
+CODIGO_ACCESO = "Nacho882"
+sesiones_autorizadas = set()
+
+def verificar_acceso(remitente: str, mensaje: str) -> tuple[bool, str]:
+    """Verifica si el remitente tiene acceso. Retorna (autorizado, respuesta)."""
+    if remitente in sesiones_autorizadas:
+        return True, ""
+    if mensaje.strip() == CODIGO_ACCESO:
+        sesiones_autorizadas.add(remitente)
+        return True, "✅ Acceso autorizado. Ya podés hacer preguntas sobre las operaciones."
+    return False, "🔒 Bot privado. Ingresá el código de acceso para continuar."
+
+"""
+Manejador de Claude API para el bot de operaciones.
+"""
+
+import os
+import anthropic
+
+client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+# Código de acceso y sesiones autorizadas
+CODIGO_ACCESO = "Nacho882"
+sesiones_autorizadas = set()
+
+def verificar_acceso(remitente: str, mensaje: str) -> tuple[bool, str]:
+    """
+    Verifica si el remitente tiene acceso.
+    Retorna (tiene_acceso, respuesta_si_no_tiene)
+    """
+    if remitente in sesiones_autorizadas:
+        return True, ""
+    
+    if mensaje.strip() == CODIGO_ACCESO:
+        sesiones_autorizadas.add(remitente)
+        return True, "✅ Acceso autorizado. Ya podés hacerme preguntas sobre las operaciones."
+    
+    return False, "🔒 Bot privado. Ingresá el código de acceso para continuar."
+
+
+
+SYSTEM_PROMPT = """Sos el asistente de operaciones de una planta productiva de hamburguesas y otras categorías (medallones, nuggets, salchichas, milanesas, etc.).
+
+Tenés acceso al tablero de operaciones actualizado del día. Respondé siempre en español, de forma clara, directa y en lenguaje natural. No uses tecnicismos innecesarios.
+
+## Datos que podés consultar:
+
+**Producción diaria:**
+- Total de kg producidos por día, separado por turno mañana (TM) y turno tarde (TT)
+- Eficiencia % total, por TM y TT (también "eficiencia paga" cuando esté disponible)
+- Merma % y Decomiso %
+- Tipo de día: LV (lunes a viernes) o SDF (sábado, domingo, feriado)
+
+**Logística - Distribución:**
+- Cantidad de camiones por tipo: semi, balancín, chasis, camioneta
+- Separados por zona: CPC + depósitos, Ituzaingó, Escobar
+- Puntaje de transportes (indica cumplimiento de condiciones: GPS, temperatura, etc.)
+- Temperatura de la caja de los camiones
+
+**Datos históricos mensuales:**
+- Producción real vs objetivo (en TN)
+- Eficiencia mensual, merma y decomiso por mes
+- Desde 2023 hasta la fecha
+
+**Temas y plan de acción:**
+- Temas abiertos y cerrados por sector: Calidad, Producción, Abastecimiento, Higiene
+- Responsable, prioridad, nivel de avance
+
+**Devoluciones y rechazos:**
+- Por cliente, producto, motivo
+
+**Recortes de producción:**
+- Qué productos no se llegaron a hacer, por qué motivo y cuántos kg se perdieron
+
+## Cómo responder:
+
+- Si preguntan por "hoy" o "último día", usá el último día con datos reales cargados. SIEMPRE aclará la fecha exacta que estás usando, por ejemplo: "El último dato disponible es del 22/03/2026".
+- Si el contexto incluye un bloque "=== ACUMULADO Marzo 2026 ===", usá ESE bloque para responder preguntas sobre marzo 2026. NO uses el resumen mensual histórico para el mes actual. El acumulado ya está calculado con todos los días disponibles hasta la fecha.
+- Cuando el mes preguntado es el mes actual (marzo 2026), asumí siempre 2026, nunca 2025.
+- Si preguntan por un turno específico (TM o TT), mostrá solo ese.
+- Si preguntan por camiones, detallá por tipo y zona según los datos disponibles.
+- Redondeá los números a enteros o con 1 decimal según corresponda.
+- Si un dato no está disponible en el Excel, decilo claramente.
+- Podés hacer comparaciones, calcular promedios o sacar tendencias si te lo piden.
+- Nunca inventes datos. Si no hay información, decí "ese dato no está cargado".
+
+## Ejemplos de preguntas que podés responder:
+- "¿Cuántos kg produjeron hoy?"
+- "¿Cuál fue la eficiencia del turno tarde?"
+- "¿Cuántos semis salieron?"
+- "¿Cómo estuvo la merma esta semana?"
+- "¿Qué temas de calidad están pendientes?"
+- "¿Cuánto produjeron en enero?"
+- "¿Hubo devoluciones este mes?"
+- "¿Qué productos se recortaron?"
+"""
+
+
+def preguntar_a_claude(pregunta: str, contexto_excel: str) -> str:
+    """
+    Envía la pregunta + contexto del Excel a Claude y devuelve la respuesta.
+    """
+    mensaje_usuario = f"""Datos actuales del tablero de operaciones:
+
+{contexto_excel}
+
+---
+Pregunta del usuario: {pregunta}"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1000,
+        system=SYSTEM_PROMPT,
+        messages=[
+            {"role": "user", "content": mensaje_usuario}
+        ]
+    )
+
+    return response.content[0].text
+
+=== requirements.txt ===
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.3
+aiohttp-retry==2.9.1
+aiosignal==1.4.0
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anthropic==0.86.0
+anyio==4.13.0
+attrs==26.1.0
+blinker==1.9.0
+certifi==2026.2.25
+charset-normalizer==3.4.6
+click==8.3.1
+distro==1.9.0
+docstring_parser==0.17.0
+et_xmlfile==2.0.0
+filelock==3.25.2
+Flask==3.0.3
+frozenlist==1.8.0
+fsspec==2026.2.0
+gunicorn==22.0.0
+h11==0.16.0
+hf-xet==1.4.2
+httpcore==1.0.9
+httpx==0.28.1
+huggingface_hub==1.8.0
+idna==3.11
+itsdangerous==2.2.0
+Jinja2==3.1.6
+jiter==0.13.0
+markdown-it-py==4.0.0
+MarkupSafe==3.0.3
+mdurl==0.1.2
+multidict==6.7.1
+openpyxl==3.1.4
+packaging==26.0
+propcache==0.4.1
+pydantic==2.12.5
+pydantic_core==2.41.5
+Pygments==2.19.2
+PyJWT==2.12.1
+python-dotenv==1.0.1
+PyYAML==6.0.3
+requests==2.33.0
+rich==14.3.3
+shellingham==1.5.4
+sniffio==1.3.1
+tokenizers==0.22.2
+tqdm==4.67.3
+twilio==9.2.2
+typer==0.24.1
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+urllib3==2.6.3
+Werkzeug==3.1.7
+yarl==1.23.0
+
+=== Procfile ===
+web: gunicorn app:app --bind 0.0.0.0:$PORT

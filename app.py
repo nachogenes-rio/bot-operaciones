@@ -16,7 +16,12 @@ def webhook():
     pregunta = request.form.get("Body", "").strip()
     remitente = request.form.get("From", "")
 
-    if not pregunta:
+    from utils.claude_handler import verificar_acceso
+    autorizado, msg_acceso = verificar_acceso(remitente, pregunta)
+
+    if not autorizado:
+        respuesta = msg_acceso
+    elif not pregunta:
         respuesta = "Hola! Mandame tu pregunta sobre las operaciones de la planta."
     else:
         try:
