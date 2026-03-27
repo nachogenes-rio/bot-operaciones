@@ -7,8 +7,27 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from utils.excel_reader import get_contexto_completo
 from utils.claude_handler import preguntar_a_claude
+import schedule
+import time
+import threading
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
+
+def job_reporte():
+    from reporte_diario import enviar_reporte
+    enviar_reporte()
+
+schedule.every().day.at("10:30").do(job_reporte)
+
+def correr_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
+
+hilo = threading.Thread(target=correr_scheduler, daemon=True)
+hilo.start()
 
 
 @app.route("/webhook", methods=["POST"])
