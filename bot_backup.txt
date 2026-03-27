@@ -828,7 +828,7 @@ def calcular_proyectado(año, mes):
     dias_pendientes = [
         d for d, info in plan_detalle.items()
         if info["tipo"] == "produccion"
-        and date(año, mes, d) > hoy
+        and date(año, mes, d) >= hoy
     ]
     target_pendiente = sum(
         plan_detalle[d]["target_tn"]

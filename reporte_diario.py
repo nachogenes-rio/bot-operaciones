@@ -28,7 +28,7 @@ def calcular_proyectado(año, mes):
     dias_pendientes = [
         d for d, info in plan_detalle.items()
         if info["tipo"] == "produccion"
-        and date(año, mes, d) > hoy
+        and date(año, mes, d) >= hoy
     ]
     target_pendiente = sum(
         plan_detalle[d]["target_tn"]
@@ -75,6 +75,10 @@ def generar_mensaje(dia=None):
 
 DESTINATARIOS = [
     {"numero": "whatsapp:+5491151201504", "nombre": "Nacho"},
+    {"numero": "whatsapp:+5491169478423", "nombre": "Romi"},
+    {"numero": "whatsapp:+5491125239121", "nombre": "Justi"},
+    {"numero": "whatsapp:+5491131124273", "nombre": "Julito"},
+    {"numero": "whatsapp:+5491139165742", "nombre": "Migue"},
 ]
 
 def enviar_reporte(solo_preview=False):
