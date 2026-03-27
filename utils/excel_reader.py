@@ -49,6 +49,10 @@ _TD_ROW_MAP = {
     36: "hora_fin_despacho",
     37: "hora_fin_despacho_itu",
     38: "hora_fin_despacho_escobar",
+    41: "stock_hamburguesas",
+    42: "stock_salchichas",
+    43: "stock_nuggets",
+    44: "stock_milanesas",
     54: "presentismo_tm", 55: "presentismo_tt",
 }
 
