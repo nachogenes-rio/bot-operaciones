@@ -19,7 +19,7 @@ def job_reporte():
     from reporte_diario import enviar_reporte
     enviar_reporte()
 
-schedule.every().day.at("10:30").do(job_reporte)
+schedule.every().day.at("03:10").do(job_reporte)
 
 def correr_scheduler():
     while True:
